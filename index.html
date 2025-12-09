@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>English Pronunciation Helper</title>
+    
+    <!-- 
+       【关键说明】
+       为了让您现在的预览界面正常显示，这里暂时用回了网络链接 (CDN)。
+       
+       ★ 打包 APK 建议：
+       1. 为了让 APP 离线也能打开，建议下载 xlsx.full.min.js 到同级目录。
+       2. 然后将下面这行 src 改为 "xlsx.full.min.js"。
+    -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        :root {
+            --primary-color: #4CAF50;
+            --loading-color: #FFC107;
+            --bg-color: #f4f4f9;
+            --item-bg: #ffffff;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 0;
+            color: var(--text-color);
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .header {
+            background-color: #fff;
+            padding: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 10px;
+        }
+
+        .btn-import { background-color: var(--primary-color); flex: 2; font-size: 15px; }
+        .btn-test { background-color: #2196F3; flex: 1; font-size: 14px; }
+        .btn-reset { background-color: #FF9800; padding: 0 15px; font-size: 20px; }
+
+        #fileInput { display: none; }
+
+        .search-box { position: relative; }
+        
+        .search-input {
+            width: 100%;
+            padding: 10px 15px 10px 35px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            box-sizing: border-box;
+            outline: none;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #999;
+        }
+
+        .list-container {
+            padding: 10px;
+            padding-bottom: 50px;
+            min-height: 60vh;
+        }
+
+        .word-item {
+            background: var(--item-bg);
+            margin-bottom: 10px;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            border-left: 5px solid transparent;
+        }
+
+        .word-item:active { background-color: #e8f5e9; }
+        .word-item.playing { border-left-color: var(--primary-color); background-color: #e8f5e9; }
+        .word-item.loading { border-left-color: var(--loading-color); background-color: #fff8e1; }
+
+        .en-text { font-size: 18px; font-weight: 600; color: #2c3e50; margin-bottom: 4px; }
+        .cn-text { font-size: 14px; color: #666; }
+
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: #333;
+            color: #fff;
+            padding: 8px 15px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-sizing: border-box;
+            z-index: 200;
+        }
+
+        .empty-state { text-align: center; margin-top: 50px; color: #999; }
+        
+        .loader {
+            display: none;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .error-banner {
+            background-color: #ff5252;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .online-badge {
+            background-color: #2196F3;
+            color: white;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    
+    <div id="errorBanner" class="error-banner"></div>
+
+    <div class="header">
+        <div class="btn-group">
+            <button class="btn-import" onclick="document.getElementById('fileInput').click()">📂 导入 Excel</button>
+            <button class="btn-test" onclick="testAudio()">🔊 测试</button>
+            <button class="btn-reset" onclick="forceReset()">🔄</button>
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" onchange="handleFile(this)">
+        <div class="loader" id="loader"></div>
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" id="searchInput" placeholder="Search..." onkeyup="filterList()">
+        </div>
+    </div>
+
+    <div class="list-container" id="listContainer">
+        <div class="empty-state">
+            <p>Ready to start</p>
+            <p>Initializing...</p>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <span id="statusBarText">Ready</span>
+        <span id="onlineBadge" class="online-badge">Online Mode</span>
+    </div>
+
+    <script>
+        var fullDataList = [];
+        var currentPlayToken = 0;
+        var useOnlineTTS = false;
+        var globalAudio = new Audio();
+        var DB_CONFIG = { name: 'EnglishAppDB', version: 1, storeName: 'excelData' };
+
+        window.onload = function() {
+            if (typeof XLSX === 'undefined') {
+                // 如果 CDN 加载失败，这里会报错，提醒检查网络或本地文件
+                showError("Error: xlsx.full.min.js missing.");
+            }
+            if (!('speechSynthesis' in window)) {
+                useOnlineTTS = true;
+                showOnlineBadge();
+            }
+            initDB().then(loadFromDB).catch(function() {
+                renderEmptyState();
+            });
+            
+            // Audio Warmup
+            var warmUp = function() {
+                if(window.speechSynthesis && window.speechSynthesis.paused) {
+                    window.speechSynthesis.resume();
+                }
+                // 播放一段极短的 Base64 静音音频来激活 AudioContext
+                globalAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAGZGF0YQQAAAAAAA==';
+                globalAudio.play().catch(function(){});
+                document.body.removeEventListener('click', warmUp);
+            };
+            document.body.addEventListener('click', warmUp);
+        };
+
+        function showError(msg) {
+            var banner = document.getElementById('errorBanner');
+            banner.textContent = msg;
+            banner.style.display = 'block';
+        }
+        
+        function showOnlineBadge() {
+            document.getElementById('onlineBadge').style.display = 'inline-block';
+        }
+        
+        function setStatus(msg) {
+            document.getElementById('statusBarText').textContent = msg;
+        }
+
+        // DB Functions
+        function initDB() {
+            return new Promise(function(resolve, reject) {
+                if (!window.indexedDB) return reject();
+                var req = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
+                req.onerror = reject;
+                req.onupgradeneeded = function(e) {
+                    var db = e.target.result;
+                    if (!db.objectStoreNames.contains(DB_CONFIG.storeName)) db.createObjectStore(DB_CONFIG.storeName);
+                };
+                req.onsuccess = function(e) { resolve(e.target.result); };
+            });
+        }
+
+        function saveToDB(data) {
+            initDB().then(function(db) {
+                var tx = db.transaction([DB_CONFIG.storeName], 'readwrite');
+                tx.objectStore(DB_CONFIG.storeName).put(data, 'latestList');
+            }).catch(function(){});
+        }
+
+        function loadFromDB() {
+            return new Promise(function(resolve, reject) {
+                initDB().then(function(db) {
+                    var tx = db.transaction([DB_CONFIG.storeName], 'readonly');
+                    var req = tx.objectStore(DB_CONFIG.storeName).get('latestList');
+                    req.onsuccess = function(e) {
+                        var data = e.target.result;
+                        if (data && data.length) {
+                            fullDataList = data;
+                            renderList(fullDataList);
+                            setStatus("Loaded " + fullDataList.length + " items");
+                        } else renderEmptyState();
+                        resolve();
+                    };
+                    req.onerror = function() { renderEmptyState(); resolve(); };
+                }).catch(function() { renderEmptyState(); reject(); });
+            });
+        }
+
+        // File Functions
+        function handleFile(input) {
+            var file = input.files[0];
+            if (!file) return;
+            if (typeof XLSX === 'undefined') {
+                alert("XLSX library missing!");
+                return;
+            }
+            document.getElementById('loader').style.display = 'block';
+            setStatus("Reading file...");
+            
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    var data = new Uint8Array(e.target.result);
+                    var workbook = XLSX.read(data, {type: 'array'});
+                    var sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    var json = XLSX.utils.sheet_to_json(sheet, {header: 1, defval: ''});
+                    
+                    fullDataList = [];
+                    for(var i=0; i<json.length; i++) {
+                        var row = json[i];
+                        var en = row[0] ? String(row[0]).trim() : '';
+                        var cn = row[1] ? String(row[1]).trim() : '';
+                        if (en) fullDataList.push({en: en, cn: cn});
+                    }
+
+                    if (fullDataList.length > 0) {
+                        renderList(fullDataList);
+                        saveToDB(fullDataList);
+                        setStatus("Success: " + fullDataList.length + " items");
+                    } else {
+                        alert("No data found");
+                        renderEmptyState();
+                    }
+                } catch (err) {
+                    alert("Parse error: " + err.message);
+                } finally {
+                    document.getElementById('loader').style.display = 'none';
+                    input.value = '';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function renderList(data) {
+            var container = document.getElementById('listContainer');
+            container.innerHTML = '';
+            var displayData = data.slice(0, 300);
+            var fragment = document.createDocumentFragment();
+
+            displayData.forEach(function(item) {
+                var div = document.createElement('div');
+                div.className = 'word-item';
+                div.onclick = function() { speak(item.en, div); };
+
+                var enDiv = document.createElement('div');
+                enDiv.className = 'en-text';
+                enDiv.textContent = item.en;
+
+                var cnDiv = document.createElement('div');
+                cnDiv.className = 'cn-text';
+                cnDiv.textContent = item.cn ? '[' + item.cn + ']' : '';
+
+                div.appendChild(enDiv);
+                div.appendChild(cnDiv);
+                fragment.appendChild(div);
+            });
+            container.appendChild(fragment);
+        }
+
+        function renderEmptyState() {
+            document.getElementById('listContainer').innerHTML = '<div class="empty-state"><p>Import Excel File</p></div>';
+        }
+
+        function filterList() {
+            var val = document.getElementById('searchInput').value.toLowerCase().trim();
+            if (!val) { renderList(fullDataList); return; }
+            var filtered = fullDataList.filter(function(i) {
+                return i.en.toLowerCase().indexOf(val) > -1 || (i.cn && i.cn.indexOf(val) > -1);
+            });
+            renderList(filtered);
+        }
+
+        // Audio Functions
+        function forceReset() {
+            if(window.speechSynthesis) window.speechSynthesis.cancel();
+            globalAudio.pause();
+            globalAudio.currentTime = 0;
+            setStatus("Reset done");
+        }
+
+        function testAudio() {
+            speak("System audio check.", null, true);
+        }
+
+        function speak(text, domElement, isTest) {
+            currentPlayToken++;
+            var myToken = currentPlayToken;
+            
+            var items = document.querySelectorAll('.word-item');
+            for(var i=0; i<items.length; i++) {
+                items[i].classList.remove('playing');
+                items[i].classList.remove('loading');
+            }
+
+            if(window.speechSynthesis) window.speechSynthesis.cancel();
+            globalAudio.pause();
+
+            if (useOnlineTTS) {
+                speakOnline(text, domElement, isTest, myToken);
+            } else {
+                speakLocal(text, domElement, isTest, myToken);
+            }
+        }
+
+        function speakLocal(text, domElement, isTest, token) {
+            var synth = window.speechSynthesis;
+            if (!synth) {
+                useOnlineTTS = true;
+                showOnlineBadge();
+                speakOnline(text, domElement, isTest, token);
+                return;
+            }
+
+            if (domElement) domElement.classList.add('playing');
+            if (synth.paused) synth.resume();
+
+            setTimeout(function() {
+                if (token !== currentPlayToken) return;
+                var u = new SpeechSynthesisUtterance(text);
+                u.lang = 'en-US';
+                u.onend = function() {
+                    if (domElement) domElement.classList.remove('playing');
+                    if (isTest) setStatus("Local test done");
+                };
+                u.onerror = function() {
+                    if (domElement) domElement.classList.remove('playing');
+                    useOnlineTTS = true;
+                    showOnlineBadge();
+                    speakOnline(text, domElement, isTest, token);
+                };
+                synth.speak(u);
+            }, 10);
+        }
+
+        function speakOnline(text, domElement, isTest, token) {
+            if (domElement) domElement.classList.add('loading');
+            if (isTest) setStatus("Requesting online audio...");
+
+            var cleanText = text.replace(/[\r\n]/g, ' ').trim();
+            var encodedText = encodeURIComponent(cleanText);
+            var urls = [
+                'https://dict.youdao.com/dictvoice?audio=' + encodedText + '&type=2',
+                'https://translate.google.com/translate_tts?ie=UTF-8&q=' + encodedText + '&tl=en&client=tw-ob'
+            ];
+            playUrlList(urls, 0, domElement, isTest, token);
+        }
+
+        function playUrlList(urls, index, domElement, isTest, token) {
+            if (index >= urls.length) {
+                if (token === currentPlayToken) {
+                    setStatus("Network fail");
+                    if (domElement) {
+                        domElement.classList.remove('loading');
+                        domElement.classList.remove('playing');
+                    }
+                }
+                return;
+            }
+
+            globalAudio.src = urls[index];
+            
+            globalAudio.oncanplay = function() {
+                if (token !== currentPlayToken) return;
+                if (domElement) {
+                    domElement.classList.remove('loading');
+                    domElement.classList.add('playing');
+                }
+                globalAudio.play().catch(function() {
+                    playUrlList(urls, index + 1, domElement, isTest, token);
+                });
+            };
+
+            globalAudio.onended = function() {
+                if (token !== currentPlayToken) return;
+                if (domElement) domElement.classList.remove('playing');
+                if (isTest) setStatus("Online done");
+            };
+
+            globalAudio.onerror = function() {
+                if (token !== currentPlayToken) return;
+                playUrlList(urls, index + 1, domElement, isTest, token);
+            };
+        }
+    </script>
+</body>
+</html>
